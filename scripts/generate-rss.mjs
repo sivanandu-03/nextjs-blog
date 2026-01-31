@@ -1,48 +1,55 @@
-import { writeFileSync, existsSync, mkdirSync } from 'fs';
+import { writeFileSync, readdirSync, readFileSync } from 'fs';
 import path from 'path';
-// Import the CommonJS module
-import pkg from '../lib/posts.js';
-const { getSortedPostsData } = pkg;
+import matter from 'gray-matter';
 
-const URL = "http://localhost:3000";
+const BASE_URL = 'http://localhost:3000';
+const postsDirectory = path.join(process.cwd(), 'posts');
 
-function generate() {
-  const posts = getSortedPostsData();
+async function generate() {
+  const fileNames = readdirSync(postsDirectory);
   
-  // Ensure public directory exists
-  if (!existsSync('./public')) {
-    mkdirSync('./public');
-  }
+  const posts = fileNames.map((fileName) => {
+    const slug = fileName.replace(/\.mdx$/, '');
+    const fullPath = path.join(postsDirectory, fileName);
+    const fileContents = readFileSync(fullPath, 'utf8');
+    const { data } = matter(fileContents);
+    return { slug, ...data };
+  }).sort((a, b) => (a.date < b.date ? 1 : -1));
 
-  // 1. Generate Sitemap (Requirement 9)
+  // Generate Sitemap.xml
   const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
-    <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-      <url><loc>${URL}</loc></url>
-      <url><loc>${URL}/blog/1</loc></url>
-      ${posts.map(p => `<url><loc>${URL}/posts/${p.slug}</loc></url>`).join('')}
-    </urlset>`;
-    
-  // 2. Generate RSS Feed (Requirement 10)
-  const rss = `<?xml version="1.0" encoding="UTF-8" ?>
-    <rss version="2.0">
-      <channel>
-        <title>Next.js Blog</title>
-        <link>${URL}</link>
-        <description>My high-performance SEO blog</description>
-        ${posts.map(p => `
-          <item>
-            <title>${p.title}</title>
-            <link>${URL}/posts/${p.slug}</link>
-            <description>${p.excerpt}</description>
-            <pubDate>${new Date(p.date).toUTCString()}</pubDate>
-          </item>
-        `).join('')}
-      </channel>
-    </rss>`;
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>${BASE_URL}/</loc></url>
+  <url><loc>${BASE_URL}/blog</loc></url>
+  ${posts.map(post => `
+  <url>
+    <loc>${BASE_URL}/posts/${post.slug}</loc>
+    <lastmod>${new Date(post.date).toISOString()}</lastmod>
+  </url>`).join('')}
+</urlset>`;
 
-  writeFileSync('./public/sitemap.xml', sitemap.trim());
-  writeFileSync('./public/rss.xml', rss.trim());
-  console.log('✅ Sitemap and RSS generated successfully!');
+  // Generate rss.xml
+  const rss = `<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Next.js Blog</title>
+    <link>${BASE_URL}</link>
+    <description>A high-performance SEO optimized blog</description>
+    <atom:link href="${BASE_URL}/rss.xml" rel="self" type="application/rss+xml" />
+    ${posts.map(post => `
+    <item>
+      <title>${post.title}</title>
+      <link>${BASE_URL}/posts/${post.slug}</link>
+      <description>${post.excerpt}</description>
+      <pubDate>${new Date(post.date).toUTCString()}</pubDate>
+      <guid>${BASE_URL}/posts/${post.slug}</guid>
+    </item>`).join('')}
+  </channel>
+</rss>`;
+
+  writeFileSync('./public/sitemap.xml', sitemap);
+  writeFileSync('./public/rss.xml', rss);
+  console.log('✅ RSS and Sitemap generated successfully.');
 }
 
 generate();
